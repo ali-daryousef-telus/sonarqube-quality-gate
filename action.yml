@@ -1,0 +1,53 @@
+name: SonarQube Quality Gate Check
+description: >
+  Check if a project / analysis passed the Quality Gate check
+branding:
+  icon: check
+  color: green
+runs:
+  using: "composite"
+  steps:
+      - name: Get Job Result URL
+        id: geturl
+        run: echo "::set-output name=url::$(grep 'ceTaskUrl=' ${{ inputs.scanMetadataReportFile }} | sed 's/ceTaskUrl=//')"
+        shell: bash
+
+      - name: Get Job result
+        id: getjobresult
+        run: |
+          status=$(curl --silent -u ${{ env.SONAR_TOKEN }}: ${{ steps.geturl.outputs.url }} | jq '.[].status' -r)
+          until [[ ${status} != "PENDING" && ${status} != "IN_PROGRESS" ]]; do
+            sleep 5
+            status=$(curl --silent -u ${{ env.SONAR_TOKEN }}: ${{ steps.geturl.outputs.url }} | jq '.[].status' -r)
+            echo "Job status : ${status}"
+          done
+          analysisid=$(curl --silent -u ${{ env.SONAR_TOKEN }}: ${{ steps.geturl.outputs.url }} | jq '.[].analysisId' -r)
+          echo "::set-output name=analysisid::${analysisid}"
+        shell: bash
+
+      - name: Get Project status
+        id: getprojectstatus
+        run: |
+          qgstatus=$(curl --silent -u ${{ env.SONAR_TOKEN }}: ${{ env.SONAR_HOST_URL }}api/qualitygates/project_status?analysisId=${{ steps.getjobresult.outputs.analysisid }} |  jq '.projectStatus.status' -r)
+          echo "::set-output name=qgstatus::${qgstatus}"
+        shell: bash
+
+      - name: Validate result
+        shell: bash
+        run: |
+          echo "SonarQube quality gate result is ${{ steps.getprojectstatus.outputs.qgstatus }}" >> $GITHUB_STEP_SUMMARY
+          case "${{ steps.getprojectstatus.outputs.qgstatus }}" in
+            OK) echo "::set-output name=quality-gate-status::${{ steps.getprojectstatus.outputs.qgstatus }}" && exit 0 ;;
+            WARN) echo "::set-output name=quality-gate-status::${{ steps.getprojectstatus.outputs.qgstatus }}" && exit 1 ;;
+            ERROR) echo "::set-output name=quality-gate-status::${{ steps.getprojectstatus.outputs.qgstatus }}" && exit 1 ;;
+            *) echo "Quality gate not set for this project." && exit 1 ;;
+          esac
+inputs:
+  scanMetadataReportFile:
+    description: Location of the scanner metadata report file
+    required: false
+    default: .scannerwork/report-task.txt
+outputs:
+  quality-gate-status:
+    description: >
+      The resulting Quality Gate Status value of PASSED, WARN or FAILED
