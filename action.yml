@@ -33,6 +33,7 @@ runs:
         shell: bash
 
       - name: Validate result
+        id: validateresult
         shell: bash
         run: |
           echo "SonarQube quality gate result is ${{ steps.getprojectstatus.outputs.qgstatus }}" >> $GITHUB_STEP_SUMMARY
@@ -51,3 +52,4 @@ outputs:
   quality-gate-status:
     description: >
       The resulting Quality Gate Status value of PASSED, WARN or FAILED
+    value: ${{ steps.validateresult.outputs.quality-gate-status }}
